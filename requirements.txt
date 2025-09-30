@@ -1,9 +1,6 @@
 # Render için minimum ve garantili çalışan gereksinimler
-pip==24.0
-setuptools==68.2.2
-wheel==0.41.2
-Cython==3.0.10
 gunicorn==21.2.0
 flask==3.0.3
-pandas==2.2.2
+pandas==2.1.4
 openpyxl==3.1.2
+numpy==1.26.4
