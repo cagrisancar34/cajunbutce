@@ -1,4 +1,5 @@
 # Render için minimum ve garantili çalışan gereksinimler
+pip==24.0
 setuptools==68.2.2
 wheel==0.41.2
 Cython==3.0.10
