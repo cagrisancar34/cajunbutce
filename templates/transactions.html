@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h4 mb-3">Tüm Hareketler</h1>
+<div class="table-responsive">
+<table class="table table-sm table-striped align-middle">
+  <thead>
+    <tr>
+      <th>Tarih</th>
+      <th>Tür</th>
+      <th>Kategori</th>
+      <th>Açıklama</th>
+      <th class="text-end">Tutar</th>
+      <th>Firma</th>
+      <th>Ödeme Tipi</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.date }}</td>
+      <td>
+        {% if r.type == 'income' %}
+          <span class="badge text-bg-success">Gelir</span>
+        {% else %}
+          <span class="badge text-bg-danger">Gider</span>
+        {% endif %}
+      </td>
+      <td>{{ r.category }}</td>
+      <td>{{ r.description }}</td>
+      <td class="text-end">{{ r.amount|tl }} ₺</td>
+      <td>
+        {% if r.firm_id %}
+          <a href="/firm/{{ r.firm_id }}">{{ r.firm_name }}</a>
+        {% else %}-{% endif %}
+      </td>
+      <td>{{ r.payment_type }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="text-center text-muted">Kayıt yok</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

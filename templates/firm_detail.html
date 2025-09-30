@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Firma Detayı: {{ firm.firm_name if firm else '' }}</h2>
+{% if firm %}
+<p><strong>Firma ID:</strong> {{ firm.firm_id }}</p>
+<p><strong>Bakiye:</strong> {{ firm.balance | tl }}</p>
+{% endif %}
+<h3>Firma Hareketleri</h3>
+<form method="POST" class="mb-4 d-flex flex-row gap-3 align-items-end">
+    <div>
+        <label>Başlangıç Tarihi:</label>
+        <input type="date" name="start_date" value="{{ start_date }}" class="form-control">
+    </div>
+    <div>
+        <label>Bitiş Tarihi:</label>
+        <input type="date" name="end_date" value="{{ end_date }}" class="form-control">
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrele</button>
+</form>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Tarih</th>
+            <th>Tip</th>
+            <th>Kategori</th>
+            <th>Açıklama</th>
+            <th>Tutar</th>
+            <th>Ödeme Tipi</th>
+            <th>Önceki Bakiye</th>
+            <th>Yeni Bakiye</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row, degisim in tx_bakiye_list %}
+        <tr>
+            <td>{{ row.date }}</td>
+            <td>{{ row.type }}</td>
+            <td>{{ row.category }}</td>
+            <td>{{ row.description }}</td>
+            <td>{{ row.amount | tl }}</td>
+            <td>{{ row.payment_type }}</td>
+            <td>{{ degisim.onceki_bakiye | tl }}</td>
+            <td>{{ degisim.yeni_bakiye | tl }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

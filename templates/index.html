@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h4 mb-3">Genel Bakış</h1>
+<div class="row g-3">
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted">Toplam Gelir</div>
+        <div class="fs-4">{{ total_income|tl }} ₺</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted">Toplam Gider</div>
+        <div class="fs-4">{{ (total_expense + total_salaries)|tl }} ₺</div>
+        <div class="small text-muted">Gider + Maaş</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted">Net</div>
+        <div class="fs-4">{{ net|tl }} ₺</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="text-muted">Personel</div>
+        <div class="fs-4">{{ employees_count }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tarih Aralığı Seçimi -->
+<h2 class="h5 mt-4">Tarih Aralığı Seç</h2>
+<form method="post" action="{{ url_for('index') }}" class="row g-3">
+  <div class="col-md-3">
+    <label for="start_date" class="form-label">Başlangıç Tarihi</label>
+    <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date }}">
+  </div>
+  <div class="col-md-3">
+    <label for="end_date" class="form-label">Bitiş Tarihi</label>
+    <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date }}">
+  </div>
+  <div class="col-md-2 d-flex align-items-end">
+    <button type="submit" class="btn btn-primary">Filtrele</button>
+  </div>
+</form>
+
+<h2 class="h5 mt-4">Seçilen Tarih Aralığı Özet</h2>
+<div class="row g-3">
+  <div class="col-md-3">
+    <div class="card"><div class="card-body"><div class="text-muted">Gelir</div><div class="fs-5">{{ period_income|tl }} ₺</div></div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body"><div class="text-muted">Gider</div><div class="fs-5">{{ period_expense|tl }} ₺</div></div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body"><div class="text-muted">Maaş</div><div class="fs-5">{{ period_salary|tl }} ₺</div></div></div>
+  </div>
+  <div class="col-md-3">
+    <div class="card"><div class="card-body"><div class="text-muted">Net</div><div class="fs-5">{{ period_net|tl }} ₺</div></div></div>
+  </div>
+</div>
+
+<h2 class="h5 mt-4">Son Hareketler</h2>
+<div class="table-responsive">
+<table class="table table-sm table-striped align-middle">
+  <thead><tr><th>Tarih</th><th>Tür</th><th>Kategori</th><th>Açıklama</th><th class="text-end">Tutar</th></tr></thead>
+  <tbody>
+    {% for r in recent %}
+    <tr>
+      <td>{{ r.date.date() if r.date }}</td>
+      <td>
+        {% if r.type == 'income' %}
+          <span class="badge text-bg-success">Gelir</span>
+        {% else %}
+          <span class="badge text-bg-danger">Gider</span>
+        {% endif %}
+      </td>
+      <td>{{ r.category }}</td>
+      <td>{{ r.description }}</td>
+      <td class="text-end">{{ r.amount|tl }} ₺</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-center text-muted">Kayıt yok</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% endblock %}

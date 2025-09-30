@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h4 mb-3">Personel</h1>
+
+<form method="post" class="row g-3">
+  <div class="col-md-2"><label class="form-label">Personel No</label><input name="employee_id" class="form-control" required></div>
+  <div class="col-md-4"><label class="form-label">Ad Soyad</label><input name="name" class="form-control" required></div>
+  <div class="col-md-3"><label class="form-label">Ünvan</label><input name="title" class="form-control"></div>
+  <div class="col-md-3"><label class="form-label">Maaş (₺)</label><input name="base_salary" class="form-control" required></div>
+  <div class="col-12"><button class="btn btn-primary">Ekle</button></div>
+</form>
+
+<h2 class="h5 mt-4">Kayıtlı Personel</h2>
+<div class="table-responsive">
+<table class="table table-sm table-striped align-middle">
+  <thead><tr><th>No</th><th>Ad</th><th>Ünvan</th><th class="text-end">Maaş</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.employee_id }}</td>
+      <td>{{ r.name }}</td>
+      <td>{{ r.title }}</td>
+      <td class="text-end">{{ r.base_salary|tl }} ₺</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="text-center text-muted">Kayıt yok</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

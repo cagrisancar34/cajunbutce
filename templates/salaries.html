@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h4 mb-3">Maaş Ödemeleri</h1>
+
+<form method="post" class="row g-3">
+  <div class="col-md-3">
+    <label class="form-label">Tarih</label>
+    <input type="date" name="date" class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Personel</label>
+    <select name="employee_id" class="form-select" required>
+      <option value="" selected disabled>Seçin...</option>
+      {% for e in employees %}
+      <option value="{{ e.employee_id }}">{{ e.employee_id }} - {{ e.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Brüt Tutar (₺)</label>
+    <input name="gross_amount" class="form-control" required>
+  </div>
+
+  <div class="col-md-12">
+    <label class="form-label">Not</label>
+    <input name="notes" class="form-control">
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary">Kaydet</button>
+  </div>
+</form>
+
+<h2 class="h5 mt-4">Ödeme Geçmişi</h2>
+<div class="table-responsive">
+<table class="table table-sm table-striped align-middle">
+  <thead>
+    <tr>
+      <th>Tarih</th>
+      <th>Personel</th>
+      <th class="text-end">Tutar</th>
+      <th>Not</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in payments %}
+    <tr>
+      <td>
+        {# p.date string ise direkt bas; datetime ise biçimlendir #}
+        {% if p.date is string %}
+          {{ p.date }}
+        {% else %}
+          {{ p.date.strftime('%Y-%m-%d') if p.date }}
+        {% endif %}
+      </td>
+      <td>{{ p.employee_id }} - {{ p.employee_name }}</td>
+      <td class="text-end">{{ p.gross_amount|tl }} ₺</td>
+      <td>{{ p.notes }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-center text-muted">Kayıt yok</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
