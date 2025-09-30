@@ -1,0 +1,12 @@
+# .venv/
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+data/*.bak
+data/*.tmp
+.env
+*.sqlite3
+.idea/
+.vscode/
