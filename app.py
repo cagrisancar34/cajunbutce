@@ -1,17 +1,10 @@
 import os
-import json
-import time
+import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, redirect, url_for, flash
-import pandas as pd
 
-# --------------------------------------------------------------------------------------
-# UYGULAMA AYARLARI
-# --------------------------------------------------------------------------------------
 APP_TITLE = "Bütçe Yönetimi (Excel Tabanlı)"
-
-# Excel dosyası yolu
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), "data", "budget.xlsx")
 
 SHEETS_DEF = {
@@ -21,9 +14,6 @@ SHEETS_DEF = {
     "firms": ["firm_id", "firm_name", "balance"],
 }
 
-# --------------------------------------------------------------------------------------
-# EXCEL ALTYAPISI
-# --------------------------------------------------------------------------------------
 def read_sheet(sheet: str) -> pd.DataFrame:
     try:
         xl = pd.ExcelFile(EXCEL_PATH)
@@ -38,11 +28,10 @@ def read_sheet(sheet: str) -> pd.DataFrame:
 
 def write_sheet(sheet: str, df: pd.DataFrame) -> None:
     try:
-        with pd.ExcelWriter(EXCEL_PATH, mode="a", if_sheet_exists="overlay", engine="openpyxl") as writer:
+        with pd.ExcelWriter(EXCEL_PATH, mode="a", if_sheet_exists="replace", engine="openpyxl") as writer:
             df = df.reindex(columns=SHEETS_DEF[sheet])
             df.to_excel(writer, sheet_name=sheet, index=False)
     except Exception:
-        # Eğer dosya yoksa veya başka bir hata varsa, yeni dosya oluştur
         with pd.ExcelWriter(EXCEL_PATH, mode="w", engine="openpyxl") as writer:
             for s, cols in SHEETS_DEF.items():
                 empty_df = pd.DataFrame(columns=cols)
@@ -55,9 +44,6 @@ def append_row(sheet: str, row_dict: dict) -> None:
     df = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
     write_sheet(sheet, df)
 
-# --------------------------------------------------------------------------------------
-# UYGULAMA (ROUTER + YARDIMCI FONKSİYONLAR)
-# --------------------------------------------------------------------------------------
 def currency_fmt(x):
     try:
         return f"{float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -147,7 +133,6 @@ def income():
                 "payment_type": payment_type,
             },
         )
-        # Firma bakiyesini güncelle (gelir eklenirse artar)
         if firm_id:
             idx = firms_df[firms_df["firm_id"] == firm_id].index
             if not idx.empty:
@@ -183,7 +168,6 @@ def expense():
                 "payment_type": payment_type,
             },
         )
-        # Firma bakiyesini güncelle
         if firm_id:
             idx = firms_df[firms_df["firm_id"] == firm_id].index
             if not idx.empty:
@@ -338,8 +322,5 @@ def delete_firm(firm_id):
         flash("Firma bulunamadı.", "danger")
     return redirect(url_for("firms"))
 
-# --------------------------------------------------------------------------------------
-# ÇALIŞTIRMA
-# --------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5010, debug=False, use_reloader=False, threaded=True)
+    app.run(host="0.0.0.0", port=10000)
