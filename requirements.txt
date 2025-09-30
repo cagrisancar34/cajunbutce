@@ -1,9 +1,10 @@
+Cython
+setuptools>=68.0.0
+wheel
 flask==3.0.3
 pandas==2.2.2
 openpyxl==3.1.2
 python-dateutil==2.9.0.post0
-setuptools>=68.0.0
-wheel
-Cython
-# Render Python sürümü için aşağıdaki satırı ekleyin:
-# runtime.txt dosyası oluşturulacak
+gunicorn
+# Render Python sürümü için aşağıdaki satırı kullanın:
+# runtime.txt dosyası ile python-3.10.13 kullanılıyor
