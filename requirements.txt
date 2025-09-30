@@ -5,3 +5,5 @@ python-dateutil==2.9.0.post0
 setuptools>=68.0.0
 wheel
 Cython
+# Render Python sürümü için aşağıdaki satırı ekleyin:
+# runtime.txt dosyası oluşturulacak
