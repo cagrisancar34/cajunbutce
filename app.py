@@ -6,25 +6,14 @@ from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, redirect, url_for, flash
 import pandas as pd
 
-# --- Google Sheets bağımlılıkları ---
-import gspread
-from google.oauth2.service_account import Credentials
-from gspread.exceptions import APIError, WorksheetNotFound
-
 # --------------------------------------------------------------------------------------
 # UYGULAMA AYARLARI
 # --------------------------------------------------------------------------------------
-APP_TITLE = "Bütçe Yönetimi (Google Sheets Tabanlı)"
+APP_TITLE = "Bütçe Yönetimi (Excel Tabanlı)"
 
-# ENV ile override edilebilir
-SHEET_ID = os.environ.get("GOOGLE_SHEETS_ID", "1H7Nl-An6BKfXFUJm-pLQOxs2PMCQIMRC5Ak8R_kMWA8")
+# Excel dosyası yolu
+EXCEL_PATH = os.path.join(os.path.dirname(__file__), "data", "budget.xlsx")
 
-GS_SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
-
-# Uygulamanın beklediği çalışma sayfaları ve kolonları
 SHEETS_DEF = {
     "transactions": ["date", "type", "category", "description", "amount", "firm_id", "payment_type"],
     "employees": ["employee_id", "name", "title", "base_salary"],
@@ -33,198 +22,38 @@ SHEETS_DEF = {
 }
 
 # --------------------------------------------------------------------------------------
-# GOOGLE SHEETS ALTYAPISI (kota dostu: tek client, tek spreadsheet, cache + retry)
+# EXCEL ALTYAPISI
 # --------------------------------------------------------------------------------------
-_GS_CLIENT = None
-_SPREADSHEET = None
-
-# Basit süreli cache (tüm sayfaları topluca tutar)
-_GS_CACHE = {"ts": 0.0, "data": {}}  # data: {sheet_name: [[...],[...],...]}
-_CACHE_TTL = 60.0  # saniye – navigasyonu belirgin hızlandırır
-
-# ensure_workbook'u sadece bir defa çalıştır
-_WORKBOOK_OK = False
-
-def _retry(fn, *args, **kwargs):
-    """429 / 5xx için exponential backoff ile 5 deneme."""
-    delay = 0.8
-    for _ in range(5):
-        try:
-            return fn(*args, **kwargs)
-        except APIError as e:
-            msg = str(e)
-            if ("429" in msg or "rateLimitExceeded" in msg or
-                "User Rate Limit Exceeded" in msg or "[500]" in msg or "[503]" in msg):
-                time.sleep(delay)
-                delay = min(delay * 2, 8.0)
-                continue
-            raise
-    return fn(*args, **kwargs)
-
-def _gs_credentials():
-    """
-    Servis hesabı kimliği:
-    - GOOGLE_APPLICATION_CREDENTIALS = /path/to/key.json
-      veya
-    - GOOGLE_CREDENTIALS_JSON = { ...json... }
-    veya proje kökünde service_account.json
-    """
-    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if cred_path and os.path.exists(cred_path):
-        return Credentials.from_service_account_file(cred_path, scopes=GS_SCOPES)
-
-    cred_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if cred_json:
-        return Credentials.from_service_account_info(json.loads(cred_json), scopes=GS_SCOPES)
-
-    for name in ("service_account.json", "credentials.json", "gcp-key.json"):
-        candidate = os.path.join(os.path.dirname(__file__), name)
-        if os.path.exists(candidate):
-            return Credentials.from_service_account_file(candidate, scopes=GS_SCOPES)
-
-    raise RuntimeError(
-        "Google servis hesabı bilgisi bulunamadı. "
-        "GOOGLE_APPLICATION_CREDENTIALS veya GOOGLE_CREDENTIALS_JSON verin "
-        "ya da proje köküne service_account.json koyun."
-    )
-
-def _gs_client():
-    global _GS_CLIENT
-    if (_GS_CLIENT is None):
-        _GS_CLIENT = gspread.authorize(_gs_credentials())
-    return _GS_CLIENT
-
-def _open_spreadsheet():
-    global _SPREADSHEET
-    if not SHEET_ID:
-        raise RuntimeError("GOOGLE_SHEETS_ID tanımlı değil.")
-    if _SPREADSHEET is None:
-        _SPREADSHEET = _retry(_gs_client().open_by_key, SHEET_ID)
-    return _SPREADSHEET
-
-def _normalize_rows(rows, cols_len):
-    """Satırları sağdan '' ile pad'leyip/truncate eder; pandas ve update için güvenli."""
-    norm = []
-    for r in rows:
-        r = list(r)
-        if len(r) < cols_len:
-            r = r + [""] * (cols_len - len(r))
-        elif len(r) > cols_len:
-            r = r[:cols_len]
-        norm.append(r)
-    return norm
-
-def ensure_workbook_once():
-    """
-    Gerekli çalışma sayfaları ve başlıkları **bir kez** garanti altına al.
-    Her istek başına çalışmaz → ciddi hızlanma.
-    """
-    global _WORKBOOK_OK
-    if _WORKBOOK_OK:
-        return
-    sh = _open_spreadsheet()
-    existing = {ws.title for ws in _retry(sh.worksheets)}
-    for sheet_name, cols in SHEETS_DEF.items():
-        if sheet_name not in existing:
-            _retry(sh.add_worksheet, title=sheet_name, rows=1000, cols=max(len(cols), 10))
-            ws = _retry(sh.worksheet, sheet_name)
-            _retry(ws.update, [cols])  # başlık
-        else:
-            ws = _retry(sh.worksheet, sheet_name)
-            first_row = _retry(ws.row_values, 1)
-            if first_row != cols:
-                values = _retry(ws.get_all_values)
-                data_rows = values[1:] if values else []
-                data_rows = _normalize_rows(data_rows, len(cols))
-                _retry(ws.clear)
-                _retry(ws.update, [cols] + data_rows)
-    _WORKBOOK_OK = True
-
-def _invalidate_cache():
-    _GS_CACHE["ts"] = 0.0
-
-def _refresh_cache_if_needed(force=False):
-    """Cache TTL dolduysa 3 sayfayı tek çağrıyla çek."""
-    ensure_workbook_once()
-    if not force:
-        now = time.time()
-        if now - _GS_CACHE["ts"] < _CACHE_TTL:
-            return
-    sh = _open_spreadsheet()
-    ranges = list(SHEETS_DEF.keys())  # ['transactions','employees','salaries']
-    resp = _retry(sh.values_batch_get, ranges=ranges)
-    data = {}
-    for vr in resp.get("valueRanges", []):
-        # "SheetName!A1:Z" gibi dönebilir; isim kısmını al
-        title = vr.get("range", "").split("!")[0].strip("'")
-        values = vr.get("values", [])
-        data[title] = values
-    _GS_CACHE["data"] = data
-    _GS_CACHE["ts"] = time.time()
-
-def _values_to_df(sheet_name):
-    cols = SHEETS_DEF[sheet_name]
-    values = _GS_CACHE["data"].get(sheet_name, [])
-    if not values:
-        return pd.DataFrame(columns=cols)
-    # İlk satır başlık; geri kalan satırları hizala
-    data_rows = values[1:] if values else []
-    data_rows = _normalize_rows(data_rows, len(cols))
-    df = pd.DataFrame(data_rows, columns=cols)
-    return df
-
 def read_sheet(sheet: str) -> pd.DataFrame:
-    """
-    İstenen çalışma sayfasını pandas DataFrame olarak döndürür.
-    Cache + batch ile tek çağrıda okur. Satırları pad'ler.
-    """
     try:
-        _refresh_cache_if_needed(force=bool(request.args.get("refresh")))
-    except RuntimeError:
-        # request context yoksa (ör. startup) normal devam
-        _refresh_cache_if_needed()
-    except WorksheetNotFound:
-        ensure_workbook_once()
-        _refresh_cache_if_needed(force=True)
-
-    df = _values_to_df(sheet)
-
-    # Tip düzenlemeleri
-    if sheet == "transactions":
-        df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
-    elif sheet == "employees":
-        df["base_salary"] = pd.to_numeric(df["base_salary"], errors="coerce")
-    elif sheet == "salaries":
-        df["gross_amount"] = pd.to_numeric(df["gross_amount"], errors="coerce")
-
-    return df.fillna("")
+        xl = pd.ExcelFile(EXCEL_PATH)
+        if sheet in xl.sheet_names:
+            df = xl.parse(sheet)
+            df = df.reindex(columns=SHEETS_DEF[sheet])
+            return df.fillna("")
+        else:
+            return pd.DataFrame(columns=SHEETS_DEF[sheet])
+    except Exception:
+        return pd.DataFrame(columns=SHEETS_DEF[sheet])
 
 def write_sheet(sheet: str, df: pd.DataFrame) -> None:
-    """
-    Tüm sayfayı verilen DataFrame ile değiştirir.
-    """
-    ensure_workbook_once()
-    sh = _open_spreadsheet()
-    ws = _retry(sh.worksheet, sheet)
-    df = df.reindex(columns=SHEETS_DEF[sheet])
-    values = [list(df.columns)] + df.astype(object).where(pd.notna(df), "").values.tolist()
-    values = _normalize_rows(values, len(SHEETS_DEF[sheet]))  # güvenlik
-    _retry(ws.clear)
-    _retry(ws.update, values)
-    _invalidate_cache()
+    try:
+        with pd.ExcelWriter(EXCEL_PATH, mode="a", if_sheet_exists="overlay", engine="openpyxl") as writer:
+            df = df.reindex(columns=SHEETS_DEF[sheet])
+            df.to_excel(writer, sheet_name=sheet, index=False)
+    except Exception:
+        # Eğer dosya yoksa veya başka bir hata varsa, yeni dosya oluştur
+        with pd.ExcelWriter(EXCEL_PATH, mode="w", engine="openpyxl") as writer:
+            for s, cols in SHEETS_DEF.items():
+                empty_df = pd.DataFrame(columns=cols)
+                empty_df.to_excel(writer, sheet_name=s, index=False)
+            df = df.reindex(columns=SHEETS_DEF[sheet])
+            df.to_excel(writer, sheet_name=sheet, index=False)
 
 def append_row(sheet: str, row_dict: dict) -> None:
-    """
-    Tek satır ekleme – kota dostu (tek API çağrısı).
-    Kolon sırasını SHEETS_DEF'e göre hizalar.
-    """
-    ensure_workbook_once()
-    sh = _open_spreadsheet()
-    ws = _retry(sh.worksheet, sheet)
-    values = [row_dict.get(col, "") for col in SHEETS_DEF[sheet]]
-    values = _normalize_rows([values], len(SHEETS_DEF[sheet]))[0]
-    _retry(ws.append_row, values)
-    _invalidate_cache()
+    df = read_sheet(sheet)
+    df = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
+    write_sheet(sheet, df)
 
 # --------------------------------------------------------------------------------------
 # UYGULAMA (ROUTER + YARDIMCI FONKSİYONLAR)
@@ -244,12 +73,10 @@ def tl_filter(val):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    # Google Sheets'ten verileri çek (cache + batch)
     tx = read_sheet("transactions")
     salaries = read_sheet("salaries")
     employees = read_sheet("employees")
 
-    # Tarih aralığı
     if request.method == "POST":
         start_date_str = request.form.get("start_date")
         end_date_str = request.form.get("end_date")
@@ -261,7 +88,6 @@ def index():
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else today.replace(day=1)
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else today.replace(day=1) + relativedelta(months=1)
 
-    # Tarih kolonlarını dönüştür
     tx["date"] = pd.to_datetime(tx.get("date", pd.Series(dtype="datetime64[ns]")), errors="coerce")
     salaries["date"] = pd.to_datetime(salaries.get("date", pd.Series(dtype="datetime64[ns]")), errors="coerce")
 
@@ -420,7 +246,6 @@ def transactions():
     firms_map = {row["firm_id"]: row["firm_name"] for _, row in firms_df.iterrows()} if not firms_df.empty else {}
     tx = tx.sort_values("date", ascending=False) if not tx.empty else tx
     rows = tx.to_dict(orient="records") if not tx.empty else []
-    # Firma adı ve ödeme tipi ekle
     for row in rows:
         row["firm_name"] = firms_map.get(row.get("firm_id", ""), "-")
     return render_template("transactions.html", app_title=APP_TITLE, rows=rows)
@@ -433,7 +258,6 @@ def firm_detail(firm_id):
     tx = read_sheet("transactions")
     tx = tx[tx["firm_id"] == firm_id] if not tx.empty else pd.DataFrame()
     tx["date"] = pd.to_datetime(tx["date"], errors="coerce")
-    # Tarih filtresi
     if request.method == "POST":
         start_date_str = request.form.get("start_date")
         end_date_str = request.form.get("end_date")
@@ -443,15 +267,12 @@ def firm_detail(firm_id):
     today = datetime.today()
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else None
     end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else None
-    # Tarih filtresi yoksa tüm işlemleri göster
     if start_date and end_date:
         filtered_tx = tx[(tx["date"] >= start_date) & (tx["date"] <= end_date)] if not tx.empty else pd.DataFrame()
     else:
         filtered_tx = tx if not tx.empty else pd.DataFrame()
-    # İşlemleri en eskiye göre sırala
     filtered_tx = filtered_tx.sort_values("date", ascending=True)
     tx_rows = filtered_tx.to_dict(orient="records") if not filtered_tx.empty else []
-    # Firma bakiyesinin başlangıcı: firmanın güncel bakiyesi - işlem toplamı
     toplam_gelir = sum(float(row["amount"] or 0) for row in tx_rows if row["type"] == "income")
     toplam_gider = sum(float(row["amount"] or 0) for row in tx_rows if row["type"] == "expense")
     bakiye = float(firm["balance"]) - (toplam_gelir - toplam_gider) if firm else 0.0
@@ -462,7 +283,6 @@ def firm_detail(firm_id):
         yeni_bakiye = bakiye + tutar if row["type"] == "income" else bakiye - tutar
         bakiye_degisimi.append({"onceki_bakiye": onceki_bakiye, "yeni_bakiye": yeni_bakiye})
         bakiye = yeni_bakiye
-    # Sonuçları ekrana verirken en yeni en üstte olsun istiyorsanız ters çevirin
     tx_rows = tx_rows[::-1]
     bakiye_degisimi = bakiye_degisimi[::-1]
     tx_bakiye_list = list(zip(tx_rows, bakiye_degisimi))
@@ -475,7 +295,6 @@ def firms():
     edit_mode = False
     edit_firm = None
     original_firm_id = None
-    # Düzenleme için GET parametresi
     edit_id = request.args.get("edit")
     if edit_id:
         firm_row = df[df["firm_id"] == edit_id]
@@ -484,7 +303,7 @@ def firms():
             edit_mode = True
             original_firm_id = edit_id
     if request.method == "POST":
-        if request.form.get("edit_mode"):  # Güncelleme
+        if request.form.get("edit_mode"):
             original_firm_id = request.form.get("original_firm_id")
             firm_id = request.form.get("firm_id")
             firm_name = request.form.get("firm_name")
@@ -495,7 +314,7 @@ def firms():
                 write_sheet("firms", df)
                 flash("Firma güncellendi.", "success")
             return redirect(url_for("firms"))
-        else:  # Ekleme
+        else:
             firm_id = request.form.get("firm_id")
             firm_name = request.form.get("firm_name")
             balance = float((request.form.get("balance") or "0").replace(",", "."))
@@ -523,7 +342,4 @@ def delete_firm(firm_id):
 # ÇALIŞTIRMA
 # --------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    # ilk açılışta yapıyı hazırla
-    ensure_workbook_once()
-    # Debug reloader gereksiz istek yapmasın; threaded=True navigasyonu akıcılaştırır
     app.run(host="0.0.0.0", port=5010, debug=False, use_reloader=False, threaded=True)

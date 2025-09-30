@@ -2,9 +2,5 @@ flask==3.0.3
 pandas==2.2.2
 openpyxl==3.1.5
 python-dateutil==2.9.0.post0
-flask
-pandas
-python-dateutil
-gspread
-gspread-dataframe
-google-auth
+setuptools
+wheel
