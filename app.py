@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, redirect, url_for, flash
 
 APP_TITLE = "Bütçe Yönetimi (Excel Tabanlı)"
@@ -14,32 +13,36 @@ SHEETS_DEF = {
     "firms": ["firm_id", "firm_name", "balance"],
 }
 
-def read_sheet(sheet: str) -> pd.DataFrame:
-    try:
-        xl = pd.ExcelFile(EXCEL_PATH)
-        if sheet in xl.sheet_names:
-            df = xl.parse(sheet)
-            df = df.reindex(columns=SHEETS_DEF[sheet])
-            return df.fillna("")
-        else:
-            return pd.DataFrame(columns=SHEETS_DEF[sheet])
-    except Exception:
-        return pd.DataFrame(columns=SHEETS_DEF[sheet])
+def read_sheet(sheet):
+    # Excel dosyası yoksa otomatik oluştur
+    if not os.path.exists(EXCEL_PATH):
+        os.makedirs(os.path.dirname(EXCEL_PATH), exist_ok=True)
+        with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
+            for s, cols in SHEETS_DEF.items():
+                pd.DataFrame(columns=cols).to_excel(writer, sheet_name=s, index=False)
+    xl = pd.ExcelFile(EXCEL_PATH)
+    if sheet in xl.sheet_names:
+        df = xl.parse(sheet)
+        df = df.reindex(columns=SHEETS_DEF[sheet])
+        return df.fillna("")
+    return pd.DataFrame(columns=SHEETS_DEF[sheet])
 
-def write_sheet(sheet: str, df: pd.DataFrame) -> None:
+def write_sheet(sheet, df):
+    # Excel dosyası ve klasörü yazılabilir mi kontrol et
+    os.makedirs(os.path.dirname(EXCEL_PATH), exist_ok=True)
     try:
         with pd.ExcelWriter(EXCEL_PATH, mode="a", if_sheet_exists="replace", engine="openpyxl") as writer:
             df = df.reindex(columns=SHEETS_DEF[sheet])
             df.to_excel(writer, sheet_name=sheet, index=False)
     except Exception:
+        # Dosya bozuksa baştan oluştur
         with pd.ExcelWriter(EXCEL_PATH, mode="w", engine="openpyxl") as writer:
             for s, cols in SHEETS_DEF.items():
-                empty_df = pd.DataFrame(columns=cols)
-                empty_df.to_excel(writer, sheet_name=s, index=False)
+                pd.DataFrame(columns=cols).to_excel(writer, sheet_name=s, index=False)
             df = df.reindex(columns=SHEETS_DEF[sheet])
             df.to_excel(writer, sheet_name=sheet, index=False)
 
-def append_row(sheet: str, row_dict: dict) -> None:
+def append_row(sheet, row_dict):
     df = read_sheet(sheet)
     df = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
     write_sheet(sheet, df)
@@ -62,36 +65,14 @@ def index():
     tx = read_sheet("transactions")
     salaries = read_sheet("salaries")
     employees = read_sheet("employees")
-
-    if request.method == "POST":
-        start_date_str = request.form.get("start_date")
-        end_date_str = request.form.get("end_date")
-    else:
-        start_date_str = request.args.get("start_date")
-        end_date_str = request.args.get("end_date")
-
     today = datetime.today()
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else today.replace(day=1)
-    end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else today.replace(day=1) + relativedelta(months=1)
-
-    tx["date"] = pd.to_datetime(tx.get("date", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-    salaries["date"] = pd.to_datetime(salaries.get("date", pd.Series(dtype="datetime64[ns]")), errors="coerce")
-
-    cur_tx = tx[(tx["date"] >= start_date) & (tx["date"] <= end_date)] if not tx.empty else pd.DataFrame()
-    cur_sal = salaries[(salaries["date"] >= start_date) & (salaries["date"] <= end_date)] if not salaries.empty else pd.DataFrame()
-
+    start_date = today.replace(day=1)
+    end_date = today
     total_income = float(tx[tx["type"] == "income"]["amount"].sum()) if not tx.empty else 0.0
     total_expense = float(tx[tx["type"] == "expense"]["amount"].sum()) if not tx.empty else 0.0
     total_salaries = float(salaries["gross_amount"].sum()) if not salaries.empty else 0.0
     net = total_income - (total_expense + total_salaries)
-
-    period_income = float(cur_tx[cur_tx["type"] == "income"]["amount"].sum()) if not cur_tx.empty else 0.0
-    period_expense = float(cur_tx[cur_tx["type"] == "expense"]["amount"].sum()) if not cur_tx.empty else 0.0
-    period_salary = float(cur_sal["gross_amount"].sum()) if not cur_sal.empty else 0.0
-    period_net = period_income - (period_expense + period_salary)
-
     recent = tx.sort_values("date", ascending=False).head(10).to_dict(orient="records") if not tx.empty else []
-
     return render_template(
         "index.html",
         app_title=APP_TITLE,
@@ -99,10 +80,6 @@ def index():
         total_expense=total_expense,
         total_salaries=total_salaries,
         net=net,
-        period_income=period_income,
-        period_expense=period_expense,
-        period_salary=period_salary,
-        period_net=period_net,
         recent=recent,
         employees_count=len(employees.index),
         start_date=start_date.strftime("%Y-%m-%d"),
@@ -133,13 +110,6 @@ def income():
                 "payment_type": payment_type,
             },
         )
-        if firm_id:
-            idx = firms_df[firms_df["firm_id"] == firm_id].index
-            if not idx.empty:
-                cur_balance = float(firms_df.loc[idx[0], "balance"] or 0)
-                new_balance = cur_balance + amount
-                firms_df.loc[idx[0], "balance"] = new_balance
-                write_sheet("firms", firms_df)
         flash("Gelir kaydı eklendi.", "success")
         return redirect(url_for("income"))
     return render_template("income.html", app_title=APP_TITLE, firms=firms, payment_types=payment_types)
@@ -168,13 +138,6 @@ def expense():
                 "payment_type": payment_type,
             },
         )
-        if firm_id:
-            idx = firms_df[firms_df["firm_id"] == firm_id].index
-            if not idx.empty:
-                cur_balance = float(firms_df.loc[idx[0], "balance"] or 0)
-                new_balance = cur_balance - amount
-                firms_df.loc[idx[0], "balance"] = new_balance
-                write_sheet("firms", firms_df)
         flash("Gider kaydı eklendi.", "success")
         return redirect(url_for("expense"))
     return render_template("expense.html", app_title=APP_TITLE, firms=firms, payment_types=payment_types)
@@ -192,7 +155,6 @@ def employees():
         )
         flash("Personel eklendi.", "success")
         return redirect(url_for("employees"))
-
     df = read_sheet("employees")
     rows = df.to_dict(orient="records") if not df.empty else []
     return render_template("employees.html", app_title=APP_TITLE, rows=rows)
@@ -201,7 +163,6 @@ def employees():
 def salaries():
     employees_df = read_sheet("employees")
     employees = employees_df.to_dict(orient="records") if not employees_df.empty else []
-
     if request.method == "POST":
         date = request.form.get("date") or datetime.today().strftime("%Y-%m-%d")
         employee_id = request.form.get("employee_id")
@@ -218,7 +179,6 @@ def salaries():
         )
         flash("Maaş ödemesi kaydedildi.", "success")
         return redirect(url_for("salaries"))
-
     payments_df = read_sheet("salaries")
     payments = payments_df.sort_values("date", ascending=False).to_dict(orient="records") if not payments_df.empty else []
     return render_template("salaries.html", app_title=APP_TITLE, employees=employees, payments=payments)
@@ -233,44 +193,6 @@ def transactions():
     for row in rows:
         row["firm_name"] = firms_map.get(row.get("firm_id", ""), "-")
     return render_template("transactions.html", app_title=APP_TITLE, rows=rows)
-
-@app.route("/firm/<firm_id>", methods=["GET", "POST"])
-def firm_detail(firm_id):
-    firms_df = read_sheet("firms")
-    firm_row = firms_df[firms_df["firm_id"] == firm_id] if not firms_df.empty else pd.DataFrame()
-    firm = firm_row.iloc[0].to_dict() if not firm_row.empty else None
-    tx = read_sheet("transactions")
-    tx = tx[tx["firm_id"] == firm_id] if not tx.empty else pd.DataFrame()
-    tx["date"] = pd.to_datetime(tx["date"], errors="coerce")
-    if request.method == "POST":
-        start_date_str = request.form.get("start_date")
-        end_date_str = request.form.get("end_date")
-    else:
-        start_date_str = request.args.get("start_date")
-        end_date_str = request.args.get("end_date")
-    today = datetime.today()
-    start_date = datetime.strptime(start_date_str, "%Y-%m-%d") if start_date_str else None
-    end_date = datetime.strptime(end_date_str, "%Y-%m-%d") if end_date_str else None
-    if start_date and end_date:
-        filtered_tx = tx[(tx["date"] >= start_date) & (tx["date"] <= end_date)] if not tx.empty else pd.DataFrame()
-    else:
-        filtered_tx = tx if not tx.empty else pd.DataFrame()
-    filtered_tx = filtered_tx.sort_values("date", ascending=True)
-    tx_rows = filtered_tx.to_dict(orient="records") if not filtered_tx.empty else []
-    toplam_gelir = sum(float(row["amount"] or 0) for row in tx_rows if row["type"] == "income")
-    toplam_gider = sum(float(row["amount"] or 0) for row in tx_rows if row["type"] == "expense")
-    bakiye = float(firm["balance"]) - (toplam_gelir - toplam_gider) if firm else 0.0
-    bakiye_degisimi = []
-    for row in tx_rows:
-        tutar = float(row["amount"] or 0)
-        onceki_bakiye = bakiye
-        yeni_bakiye = bakiye + tutar if row["type"] == "income" else bakiye - tutar
-        bakiye_degisimi.append({"onceki_bakiye": onceki_bakiye, "yeni_bakiye": yeni_bakiye})
-        bakiye = yeni_bakiye
-    tx_rows = tx_rows[::-1]
-    bakiye_degisimi = bakiye_degisimi[::-1]
-    tx_bakiye_list = list(zip(tx_rows, bakiye_degisimi))
-    return render_template("firm_detail.html", app_title=APP_TITLE, firm=firm, tx_bakiye_list=tx_bakiye_list, start_date=start_date.strftime("%Y-%m-%d") if start_date else "", end_date=end_date.strftime("%Y-%m-%d") if end_date else "")
 
 @app.route("/firms", methods=["GET", "POST"])
 def firms():
