@@ -1,6 +1,6 @@
 flask==3.0.3
 pandas==2.2.2
-openpyxl==3.1.5
+openpyxl==3.1.2
 python-dateutil==2.9.0.post0
 setuptools
 wheel
