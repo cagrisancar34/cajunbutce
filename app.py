@@ -73,6 +73,13 @@ def index():
     total_salaries = float(salaries["gross_amount"].sum()) if not salaries.empty else 0.0
     net = total_income - (total_expense + total_salaries)
     recent = tx.sort_values("date", ascending=False).head(10).to_dict(orient="records") if not tx.empty else []
+    # Tarih alanını string'den datetime nesnesine çevir
+    for r in recent:
+        if isinstance(r["date"], str):
+            try:
+                r["date"] = datetime.strptime(r["date"], "%Y-%m-%d")
+            except Exception:
+                pass
     return render_template(
         "index.html",
         app_title=APP_TITLE,
@@ -245,5 +252,13 @@ def delete_firm(firm_id):
     return redirect(url_for("firms"))
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    import os
+    port = int(os.environ.get("PORT", 0)) or 0
+    if port == 0:
+        import socket
+        sock = socket.socket()
+        sock.bind(("", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        print(f"No port specified or all default ports in use. Using random available port: {port}")
     app.run(host="0.0.0.0", port=port)
