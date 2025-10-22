@@ -242,27 +242,33 @@ function cajun_butce_wp_transactions() {
 // Gelir ekleme formu
 function cajun_butce_wp_income_form() {
     global $wpdb;
+    $alert = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_income_submit'])) {
         $date = sanitize_text_field($_POST['date']);
         $category = sanitize_text_field($_POST['category']);
         $description = sanitize_text_field($_POST['description']);
-        $amount = floatval(str_replace(',', '.', $_POST['amount']));
+        $amount = str_replace(',', '.', $_POST['amount']);
         $firm_id = sanitize_text_field($_POST['firm_id']);
         $payment_type = sanitize_text_field($_POST['payment_type']);
-        $wpdb->insert("{$wpdb->prefix}cajun_transactions", [
-            'date' => $date,
-            'type' => 'income',
-            'category' => $category,
-            'description' => $description,
-            'amount' => $amount,
-            'firm_id' => $firm_id,
-            'payment_type' => $payment_type
-        ]);
-        echo '<div class="updated">Gelir kaydı eklendi.</div>';
+        if (!$date || !$amount || !is_numeric($amount)) {
+            $alert = '<div class="alert alert-danger">Tarih ve tutar zorunludur, tutar sayısal olmalıdır.</div>';
+        } else {
+            $wpdb->insert("{$wpdb->prefix}cajun_transactions", [
+                'date' => $date,
+                'type' => 'income',
+                'category' => $category,
+                'description' => $description,
+                'amount' => floatval($amount),
+                'firm_id' => $firm_id,
+                'payment_type' => $payment_type
+            ]);
+            $alert = '<div class="alert alert-success">Gelir kaydı eklendi.</div>';
+        }
     }
     $firms = $wpdb->get_results("SELECT firm_id, firm_name FROM {$wpdb->prefix}cajun_firms", ARRAY_A);
     $payment_types = ['Nakit', 'Kart', 'Çek', 'Senet'];
     ob_start();
+    echo $alert;
     ?>
     <form method="post">
         <label>Tarih: <input type="date" name="date" value="<?php echo date('Y-m-d'); ?>" required></label><br>
@@ -289,27 +295,33 @@ function cajun_butce_wp_income_form() {
 // Gider ekleme formu
 function cajun_butce_wp_expense_form() {
     global $wpdb;
+    $alert = '';
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_expense_submit'])) {
         $date = sanitize_text_field($_POST['date']);
         $category = sanitize_text_field($_POST['category']);
         $description = sanitize_text_field($_POST['description']);
-        $amount = floatval(str_replace(',', '.', $_POST['amount']));
+        $amount = str_replace(',', '.', $_POST['amount']);
         $firm_id = sanitize_text_field($_POST['firm_id']);
         $payment_type = sanitize_text_field($_POST['payment_type']);
-        $wpdb->insert("{$wpdb->prefix}cajun_transactions", [
-            'date' => $date,
-            'type' => 'expense',
-            'category' => $category,
-            'description' => $description,
-            'amount' => $amount,
-            'firm_id' => $firm_id,
-            'payment_type' => $payment_type
-        ]);
-        echo '<div class="updated">Gider kaydı eklendi.</div>';
+        if (!$date || !$amount || !is_numeric($amount)) {
+            $alert = '<div class="alert alert-danger">Tarih ve tutar zorunludur, tutar sayısal olmalıdır.</div>';
+        } else {
+            $wpdb->insert("{$wpdb->prefix}cajun_transactions", [
+                'date' => $date,
+                'type' => 'expense',
+                'category' => $category,
+                'description' => $description,
+                'amount' => floatval($amount),
+                'firm_id' => $firm_id,
+                'payment_type' => $payment_type
+            ]);
+            $alert = '<div class="alert alert-success">Gider kaydı eklendi.</div>';
+        }
     }
     $firms = $wpdb->get_results("SELECT firm_id, firm_name FROM {$wpdb->prefix}cajun_firms", ARRAY_A);
     $payment_types = ['Nakit', 'Kart', 'Çek', 'Senet'];
     ob_start();
+    echo $alert;
     ?>
     <form method="post">
         <label>Tarih: <input type="date" name="date" value="<?php echo date('Y-m-d'); ?>" required></label><br>
@@ -336,47 +348,235 @@ function cajun_butce_wp_expense_form() {
 // Personeller sekmesi
 function cajun_butce_wp_employees() {
     global $wpdb;
-    $rows = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}cajun_employees ORDER BY employee_id DESC LIMIT 50");
-    ob_start();
-    echo '<h2>Personel</h2><table class="widefat"><thead><tr><th>ID</th><th>Ad</th><th>Ünvan</th><th>Maaş</th></tr></thead><tbody>';
-    foreach($rows as $r) {
-        echo "<tr><td>{$r->employee_id}</td><td>{$r->name}</td><td>{$r->title}</td><td>{$r->base_salary}</td></tr>";
+    $alert = '';
+    // Personel ekleme
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_employee_submit'])) {
+        $employee_id = sanitize_text_field($_POST['employee_id']);
+        $name = sanitize_text_field($_POST['name']);
+        $title = sanitize_text_field($_POST['title']);
+        $base_salary = floatval(str_replace(',', '.', $_POST['base_salary']));
+        if (!$employee_id || !$name || !$base_salary) {
+            $alert = '<div class="alert alert-danger">ID, Ad Soyad ve Taban Maaş zorunludur.</div>';
+        } elseif (!is_numeric($_POST['base_salary'])) {
+            $alert = '<div class="alert alert-danger">Taban maaş sayısal olmalıdır.</div>';
+        } else {
+            $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}cajun_employees WHERE employee_id=%s", $employee_id));
+            if ($exists) {
+                $alert = '<div class="alert alert-danger">Bu ID ile personel zaten var!</div>';
+            } else {
+                $wpdb->insert("{$wpdb->prefix}cajun_employees", [
+                    'employee_id' => $employee_id,
+                    'name' => $name,
+                    'title' => $title,
+                    'base_salary' => $base_salary
+                ]);
+                $alert = '<div class="alert alert-success">Personel eklendi.</div>';
+            }
+        }
     }
-    echo '</tbody></table>';
+    // Personel güncelleme
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_employee_update'])) {
+        $original_employee_id = sanitize_text_field($_POST['original_employee_id']);
+        $employee_id = sanitize_text_field($_POST['employee_id']);
+        $name = sanitize_text_field($_POST['name']);
+        $title = sanitize_text_field($_POST['title']);
+        $base_salary = floatval(str_replace(',', '.', $_POST['base_salary']));
+        if (!$employee_id || !$name || !$base_salary) {
+            $alert = '<div class="alert alert-danger">ID, Ad Soyad ve Taban Maaş zorunludur.</div>';
+        } elseif (!is_numeric($_POST['base_salary'])) {
+            $alert = '<div class="alert alert-danger">Taban maaş sayısal olmalıdır.</div>';
+        } else {
+            $wpdb->update("{$wpdb->prefix}cajun_employees",
+                [ 'employee_id' => $employee_id, 'name' => $name, 'title' => $title, 'base_salary' => $base_salary ],
+                [ 'employee_id' => $original_employee_id ]
+            );
+            $alert = '<div class="alert alert-success">Personel güncellendi.</div>';
+        }
+    }
+    // Personel silme
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_employee_delete'])) {
+        $employee_id = sanitize_text_field($_POST['employee_id']);
+        $wpdb->delete("{$wpdb->prefix}cajun_employees", [ 'employee_id' => $employee_id ]);
+        $alert = '<div class="alert alert-success">Personel silindi.</div>';
+    }
+    // Düzenleme modunda mı?
+    $edit_mode = false;
+    $edit_employee = null;
+    if (isset($_GET['edit_employee'])) {
+        $edit_employee = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}cajun_employees WHERE employee_id=%s", $_GET['edit_employee']), ARRAY_A);
+        if ($edit_employee) $edit_mode = true;
+    }
+    $rows = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}cajun_employees ORDER BY name ASC", ARRAY_A);
+    ob_start();
+    echo $alert;
+    ?>
+    <form method="post">
+        <?php if ($edit_mode) { ?>
+            <input type="hidden" name="original_employee_id" value="<?php echo esc_attr($edit_employee['employee_id']); ?>">
+            <label>ID: <input type="text" name="employee_id" value="<?php echo esc_attr($edit_employee['employee_id']); ?>" required></label><br>
+            <label>Ad Soyad: <input type="text" name="name" value="<?php echo esc_attr($edit_employee['name']); ?>" required></label><br>
+            <label>Ünvan: <input type="text" name="title" value="<?php echo esc_attr($edit_employee['title']); ?>"></label><br>
+            <label>Taban Maaş: <input type="text" name="base_salary" value="<?php echo esc_attr($edit_employee['base_salary']); ?>" required></label><br>
+            <button type="submit" name="cajun_employee_update">Güncelle</button>
+            <a href="?tab=employees" class="btn btn-secondary">Vazgeç</a>
+        <?php } else { ?>
+            <label>ID: <input type="text" name="employee_id" required></label><br>
+            <label>Ad Soyad: <input type="text" name="name" required></label><br>
+            <label>Ünvan: <input type="text" name="title"></label><br>
+            <label>Taban Maaş: <input type="text" name="base_salary" required></label><br>
+            <button type="submit" name="cajun_employee_submit">Personel Ekle</button>
+        <?php } ?>
+    </form>
+    <h3>Personel Listesi</h3>
+    <table class="widefat"><thead><tr><th>ID</th><th>Ad Soyad</th><th>Ünvan</th><th>Taban Maaş</th><th>Düzenle</th><th>Sil</th></tr></thead><tbody>
+    <?php foreach ($rows as $row) {
+        echo '<tr>';
+        echo '<td>' . esc_html($row['employee_id']) . '</td>';
+        echo '<td>' . esc_html($row['name']) . '</td>';
+        echo '<td>' . esc_html($row['title']) . '</td>';
+        echo '<td>' . number_format($row['base_salary'], 2, ',', '.') . ' TL</td>';
+        echo '<td><a href="?tab=employees&edit_employee=' . esc_attr($row['employee_id']) . '" class="btn btn-warning btn-sm">Düzenle</a></td>';
+        echo '<td><form method="post" style="display:inline;"><input type="hidden" name="employee_id" value="' . esc_attr($row['employee_id']) . '"><button type="submit" name="cajun_employee_delete" class="btn btn-danger btn-sm" onclick="return confirm(\'Silmek istediğinize emin misiniz?\');">Sil</button></form></td>';
+        echo '</tr>';
+    } ?>
+    </tbody></table>
+    <?php
     return ob_get_clean();
 }
 
 // Maaşlar sekmesi
 function cajun_butce_wp_salaries() {
     global $wpdb;
-    $rows = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}cajun_salaries ORDER BY date DESC LIMIT 50");
-    ob_start();
-    echo '<h2>Maaş</h2><table class="widefat"><thead><tr><th>Tarih</th><th>Personel</th><th>Tutar</th><th>Not</th></tr></thead><tbody>';
-    foreach($rows as $r) {
-        echo "<tr><td>{$r->date}</td><td>{$r->employee_name}</td><td>{$r->gross_amount}</td><td>{$r->notes}</td></tr>";
+    $alert = '';
+    // Maaş ekleme
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_salary_submit'])) {
+        $date = sanitize_text_field($_POST['date']);
+        $employee_id = sanitize_text_field($_POST['employee_id']);
+        $emp = $wpdb->get_row($wpdb->prepare("SELECT name FROM {$wpdb->prefix}cajun_employees WHERE employee_id=%s", $employee_id));
+        if (!$date || !$employee_id || !is_numeric($_POST['gross_amount'])) {
+            $alert = '<div class="alert alert-danger">Tarih, personel ve brüt tutar zorunludur ve tutar sayısal olmalıdır.</div>';
+        } elseif (!$emp) {
+            $alert = '<div class="alert alert-danger">Personel bulunamadı. Önce personeli ekleyin.</div>';
+        } else {
+            $employee_name = $emp->name;
+            $gross_amount = floatval(str_replace(',', '.', $_POST['gross_amount']));
+            $notes = sanitize_text_field($_POST['notes']);
+            $wpdb->insert("{$wpdb->prefix}cajun_salaries", [
+                'date' => $date,
+                'employee_id' => $employee_id,
+                'employee_name' => $employee_name,
+                'gross_amount' => $gross_amount,
+                'notes' => $notes
+            ]);
+            $alert = '<div class="alert alert-success">Maaş ödemesi kaydedildi.</div>';
+        }
     }
-    echo '</tbody></table>';
+    // Maaş güncelleme
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_salary_update'])) {
+        $id = intval($_POST['salary_id']);
+        $date = sanitize_text_field($_POST['date']);
+        $employee_id = sanitize_text_field($_POST['employee_id']);
+        $emp = $wpdb->get_row($wpdb->prepare("SELECT name FROM {$wpdb->prefix}cajun_employees WHERE employee_id=%s", $employee_id));
+        $employee_name = $emp ? $emp->name : '';
+        if (!$date || !$employee_id || !is_numeric($_POST['gross_amount'])) {
+            $alert = '<div class="alert alert-danger">Tarih, personel ve brüt tutar zorunludur ve tutar sayısal olmalıdır.</div>';
+        } else {
+            $gross_amount = floatval(str_replace(',', '.', $_POST['gross_amount']));
+            $notes = sanitize_text_field($_POST['notes']);
+            $wpdb->update("{$wpdb->prefix}cajun_salaries",
+                [ 'date' => $date, 'employee_id' => $employee_id, 'employee_name' => $employee_name, 'gross_amount' => $gross_amount, 'notes' => $notes ],
+                [ 'id' => $id ]
+            );
+            $alert = '<div class="alert alert-success">Maaş güncellendi.</div>';
+        }
+    }
+    // Maaş silme
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_salary_delete'])) {
+        $id = intval($_POST['salary_id']);
+        $wpdb->delete("{$wpdb->prefix}cajun_salaries", [ 'id' => $id ]);
+        $alert = '<div class="alert alert-success">Maaş silindi.</div>';
+    }
+    // Düzenleme modunda mı?
+    $edit_mode = false;
+    $edit_salary = null;
+    if (isset($_GET['edit_salary'])) {
+        $edit_salary = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}cajun_salaries WHERE id=%d", intval($_GET['edit_salary'])), ARRAY_A);
+        if ($edit_salary) $edit_mode = true;
+    }
+    $employees = $wpdb->get_results("SELECT employee_id, name FROM {$wpdb->prefix}cajun_employees", ARRAY_A);
+    $payments = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}cajun_salaries ORDER BY date DESC", ARRAY_A);
+    ob_start();
+    echo $alert;
+    ?>
+    <form method="post">
+        <?php if ($edit_mode) { ?>
+            <input type="hidden" name="salary_id" value="<?php echo esc_attr($edit_salary['id']); ?>">
+            <label>Tarih: <input type="date" name="date" value="<?php echo esc_attr($edit_salary['date']); ?>" required></label><br>
+            <label>Personel:
+                <select name="employee_id" required>
+                    <option value="">Seçiniz</option>
+                    <?php foreach ($employees as $emp) echo '<option value="' . esc_attr($emp['employee_id']) . '"' . ($emp['employee_id'] == $edit_salary['employee_id'] ? ' selected' : '') . '>' . esc_html($emp['name']) . '</option>'; ?>
+                </select>
+            </label><br>
+            <label>Brüt Tutar: <input type="text" name="gross_amount" value="<?php echo esc_attr($edit_salary['gross_amount']); ?>" required></label><br>
+            <label>Açıklama: <input type="text" name="notes" value="<?php echo esc_attr($edit_salary['notes']); ?>"></label><br>
+            <button type="submit" name="cajun_salary_update">Güncelle</button>
+            <a href="?tab=salaries" class="btn btn-secondary">Vazgeç</a>
+        <?php } else { ?>
+            <label>Tarih: <input type="date" name="date" value="<?php echo date('Y-m-d'); ?>" required></label><br>
+            <label>Personel:
+                <select name="employee_id" required>
+                    <option value="">Seçiniz</option>
+                    <?php foreach ($employees as $emp) echo '<option value="' . esc_attr($emp['employee_id']) . '">' . esc_html($emp['name']) . '</option>'; ?>
+                </select>
+            </label><br>
+            <label>Brüt Tutar: <input type="text" name="gross_amount" required></label><br>
+            <label>Açıklama: <input type="text" name="notes"></label><br>
+            <button type="submit" name="cajun_salary_submit">Maaş Ekle</button>
+        <?php } ?>
+    </form>
+    <h3>Maaş Ödemeleri</h3>
+    <table class="widefat"><thead><tr><th>Tarih</th><th>Personel</th><th>Brüt Tutar</th><th>Açıklama</th><th>Düzenle</th><th>Sil</th></tr></thead><tbody>
+    <?php foreach ($payments as $pay) {
+        echo '<tr>';
+        echo '<td>' . esc_html($pay['date']) . '</td>';
+        echo '<td>' . esc_html($pay['employee_name']) . '</td>';
+        echo '<td>' . number_format($pay['gross_amount'], 2, ',', '.') . ' TL</td>';
+        echo '<td>' . esc_html($pay['notes']) . '</td>';
+        echo '<td><a href="?tab=salaries&edit_salary=' . esc_attr($pay['id']) . '" class="btn btn-warning btn-sm">Düzenle</a></td>';
+        echo '<td><form method="post" style="display:inline;"><input type="hidden" name="salary_id" value="' . esc_attr($pay['id']) . '"><button type="submit" name="cajun_salary_delete" class="btn btn-danger btn-sm" onclick="return confirm(\'Silmek istediğinize emin misiniz?\');">Sil</button></form></td>';
+        echo '</tr>';
+    } ?>
+    </tbody></table>
+    <?php
     return ob_get_clean();
 }
 
 // Firmalar sekmesi
 function cajun_butce_wp_firms() {
     global $wpdb;
+    $alert = '';
     // Firma ekleme
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_firm_submit'])) {
         $firm_id = sanitize_text_field($_POST['firm_id']);
         $firm_name = sanitize_text_field($_POST['firm_name']);
         $balance = floatval(str_replace(',', '.', $_POST['balance']));
-        $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}cajun_firms WHERE firm_id=%s", $firm_id));
-        if ($exists) {
-            echo '<div class="error">Bu ID ile firma zaten var!</div>';
+        if (!$firm_id || !$firm_name || $_POST['balance'] === '') {
+            $alert = '<div class="alert alert-danger">ID, Firma Adı ve Bakiye zorunludur.</div>';
+        } elseif (!is_numeric($_POST['balance'])) {
+            $alert = '<div class="alert alert-danger">Bakiye sayısal olmalıdır.</div>';
         } else {
-            $wpdb->insert("{$wpdb->prefix}cajun_firms", [
-                'firm_id' => $firm_id,
-                'firm_name' => $firm_name,
-                'balance' => $balance
-            ]);
-            echo '<div class="updated">Firma eklendi.</div>';
+            $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}cajun_firms WHERE firm_id=%s", $firm_id));
+            if ($exists) {
+                $alert = '<div class="alert alert-danger">Bu ID ile firma zaten var!</div>';
+            } else {
+                $wpdb->insert("{$wpdb->prefix}cajun_firms", [
+                    'firm_id' => $firm_id,
+                    'firm_name' => $firm_name,
+                    'balance' => $balance
+                ]);
+                $alert = '<div class="alert alert-success">Firma eklendi.</div>';
+            }
         }
     }
     // Firma güncelleme
@@ -385,17 +585,23 @@ function cajun_butce_wp_firms() {
         $firm_id = sanitize_text_field($_POST['firm_id']);
         $firm_name = sanitize_text_field($_POST['firm_name']);
         $balance = floatval(str_replace(',', '.', $_POST['balance']));
-        $wpdb->update("{$wpdb->prefix}cajun_firms",
-            [ 'firm_id' => $firm_id, 'firm_name' => $firm_name, 'balance' => $balance ],
-            [ 'firm_id' => $original_firm_id ]
-        );
-        echo '<div class="updated">Firma güncellendi.</div>';
+        if (!$firm_id || !$firm_name || $_POST['balance'] === '') {
+            $alert = '<div class="alert alert-danger">ID, Firma Adı ve Bakiye zorunludur.</div>';
+        } elseif (!is_numeric($_POST['balance'])) {
+            $alert = '<div class="alert alert-danger">Bakiye sayısal olmalıdır.</div>';
+        } else {
+            $wpdb->update("{$wpdb->prefix}cajun_firms",
+                [ 'firm_id' => $firm_id, 'firm_name' => $firm_name, 'balance' => $balance ],
+                [ 'firm_id' => $original_firm_id ]
+            );
+            $alert = '<div class="alert alert-success">Firma güncellendi.</div>';
+        }
     }
     // Firma silme
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cajun_firm_delete'])) {
         $firm_id = sanitize_text_field($_POST['firm_id']);
         $wpdb->delete("{$wpdb->prefix}cajun_firms", [ 'firm_id' => $firm_id ]);
-        echo '<div class="updated">Firma silindi.</div>';
+        $alert = '<div class="alert alert-success">Firma silindi.</div>';
     }
     // Düzenleme modunda mı?
     $edit_mode = false;
@@ -406,6 +612,7 @@ function cajun_butce_wp_firms() {
     }
     $rows = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}cajun_firms ORDER BY firm_name ASC", ARRAY_A);
     ob_start();
+    echo $alert;
     ?>
     <form method="post">
         <?php if ($edit_mode) { ?>
